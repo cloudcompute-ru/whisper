@@ -110,6 +110,7 @@ report_stage '{"stage":"start_server"}'
 
 cat > "${APP_DIR}/app.py" <<'PYAPP'
 import gradio as gr
+import os
 from faster_whisper import WhisperModel
 
 MODEL = WhisperModel("large-v3", device="cuda", compute_type="float16")
@@ -122,7 +123,11 @@ def transcribe(audio):
     return f"[{info.language}] {text}"
 
 demo = gr.Interface(fn=transcribe, inputs=gr.Audio(type="filepath"), outputs="text", title="Whisper")
-demo.launch(server_name="0.0.0.0", server_port=int(__import__("os").environ.get("WHISPER_PORT", "7860")))
+demo.launch(
+    server_name="0.0.0.0",
+    server_port=int(os.environ.get("WHISPER_PORT", "7860")),
+    root_path=os.environ.get("GRADIO_ROOT_PATH", "/app-ui"),
+)
 PYAPP
 
 export WHISPER_PORT
