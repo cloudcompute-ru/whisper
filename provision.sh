@@ -35,10 +35,18 @@ send_log_tail() {
     report_stage "{\"stage\":\"${CURRENT_STAGE}\",\"log_tail\":${encoded}}"
 }
 
+on_error() {
+    local status=$?
+    trap - ERR
+    send_log_tail
+    report_stage "{\"stage\":\"${CURRENT_STAGE}\",\"message\":\"Whisper setup failed (exit ${status}). Check the installation log.\"}"
+    exit "$status"
+}
+trap on_error ERR
+
 setup_python() {
     if [ -x "${VENV_DIR}/bin/python" ]; then
         PY="${VENV_DIR}/bin/python"
-        PIP="${VENV_DIR}/bin/pip"
         return 0
     fi
     mkdir -p "$APP_DIR"
@@ -46,9 +54,8 @@ setup_python() {
         curl -fsSL https://astral.sh/uv/install.sh | sh
         export PATH="${HOME}/.local/bin:${PATH}"
     fi
-    uv venv --python "$PYVERSION" "$VENV_DIR"
+    uv venv --seed --python "$PYVERSION" "$VENV_DIR"
     PY="${VENV_DIR}/bin/python"
-    PIP="${VENV_DIR}/bin/pip"
 }
 
 # --- install_runtime -------------------------------------------------------
@@ -57,13 +64,23 @@ log "stage: install_runtime"
 report_stage '{"stage":"install_runtime","progress_pct":0}'
 
 setup_python
-"$PIP" install --no-cache-dir -U pip wheel
-"$PIP" install --no-cache-dir \
-    "faster-whisper==1.1.1" \
-    "gradio==5.23.0" \
+# Recover virtual environments left by older installers without pip.
+"$PY" -m pip --version >/dev/null 2>&1 || "$PY" -m ensurepip --upgrade
+"$PY" -m pip install --no-cache-dir -U pip wheel
+"$PY" -m pip install --no-cache-dir \
     "torch" \
     "torchaudio" \
     --index-url https://download.pytorch.org/whl/cu128
+"$PY" -m pip install --no-cache-dir \
+    "faster-whisper==1.1.1" \
+    "gradio==5.23.0" \
+    "requests>=2.32,<3" \
+    --index-url https://pypi.org/simple
+
+# CTranslate2 loads these libraries dynamically; PyTorch's wheels install them
+# inside the environment rather than the system linker search path.
+CUDA_LIB_PATH="$("$PY" -c 'import nvidia.cublas.lib, nvidia.cudnn.lib; print(nvidia.cublas.lib.__path__[0] + ":" + nvidia.cudnn.lib.__path__[0])')"
+export LD_LIBRARY_PATH="${CUDA_LIB_PATH}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
 
 report_stage '{"stage":"install_runtime","progress_pct":100}'
 send_log_tail
@@ -131,3 +148,4 @@ done
 
 report_stage "{\"stage\":\"start_server\",\"message\":\"Whisper UI not ready in ${BIND_TIMEOUT_S}s.\"}"
 exit 1
+

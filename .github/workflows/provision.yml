@@ -1,0 +1,13 @@
+name: Whisper installer
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash -n provision.sh
+      - run: python3 -m unittest discover -s tests -v
